@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  network-db:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    container_name: network_topology_db
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=YourStrong@Password123!
+    volumes:
+      - sql_data:/var/opt/mssql
+
+volumes:
+  sql_data:
