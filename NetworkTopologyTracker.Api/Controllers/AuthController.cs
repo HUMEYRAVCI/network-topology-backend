@@ -54,7 +54,28 @@ namespace NetworkTopologyTracker.Api.Controllers
                 return Unauthorized(new { message = "Kullanıcı adı veya şifre hatalı!" });
             }
 
-            // 🔑 ADIM: Kullanıcı Doğruysa Güvenli JWT Token Üret
+            // ==================== YENİ: GERÇEK ZAMANLI LOG VE SON GİRİŞ GÜNCELLEMESİ ====================
+            
+            // 1. Kullanıcının son giriş tarihini şu anki zaman olarak damgala
+            user.LastLoginAt = DateTime.UtcNow;
+
+            // 2. Sistem logları tablosuna kurumsal giriş kaydı fırlat
+            var log = new SystemLog
+            {
+                Username = user.Username,
+                Action = "Kullanıcı Girişi",
+                Details = $"{user.FirstName} {user.LastName} ({user.Role}) sisteme başarıyla giriş yaptı.",
+                ActionType = "Giriş",
+                Timestamp = DateTime.UtcNow
+            };
+            await _context.SystemLogs.AddAsync(log);
+
+            // 3. Değişiklikleri veritabanına kalıcı olarak işle
+            await _context.SaveChangesAsync();
+
+            // ============================================================================================
+
+            // 🔑 ADIM: Kullanıcı Doğruysa Güvenli JWT Token Üret (Eski Kod Korundu)
             var tokenHandler = new JwtSecurityTokenHandler();
             
             // appsettings.json'dan gizli anahtarı oku (Eğer yoksa geçici güvenli bir anahtar kullan)
@@ -86,6 +107,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                 user.LastName,
                 user.Username,
                 user.Role,
+                user.LastLoginAt, // Arayüzde anlık listelemek isterseniz bunu da yanıta ekledik
                 Token = tokenString
             });
         }

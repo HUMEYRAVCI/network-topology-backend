@@ -8,5 +8,6 @@ namespace NetworkTopologyTracker.Api.Entities
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty; // Güvenli şekilde hash'lenmiş şifre
         public string Role { get; set; } = string.Empty; // "SuperAdmin" veya "Viewer"
+        public DateTime? LastLoginAt { get; set; }
     }
 }

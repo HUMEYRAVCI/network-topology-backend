@@ -19,6 +19,9 @@ namespace NetworkTopologyTracker.Api.Data
         public DbSet<Connection> Connections { get; set; }
         public DbSet<Credential> Credentials { get; set; }
         public DbSet<User> Users { get; set; }
+        
+        // YENİ LOG TABLOMUZU DOĞRU YERE ALDIK:
+        public DbSet<SystemLog> SystemLogs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
