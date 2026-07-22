@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace NetworkTopologyTracker.Api.Entities
 {
@@ -22,9 +23,11 @@ namespace NetworkTopologyTracker.Api.Entities
         public int DeviceId { get; set; }
 
         [ForeignKey("DeviceId")]
+        [JsonIgnore] // 🛑 Port -> Device -> Ports sonsuz JSON döngüsünü engeller
         public Device? Device { get; set; }
 
-        // Topoloji Bağlantısı: Bu porttan başka bir yere giden aktif bir kablo bağlantısı var mı?
+        // Topoloji Bağlantısı: Bu porttan başka bir yere giden aktif bir kablo bağlantısı
+        [JsonIgnore] // 🛑 Port -> Connection -> Port sonsuz JSON döngüsünü engeller
         public Connection? Connection { get; set; }
     }
 }

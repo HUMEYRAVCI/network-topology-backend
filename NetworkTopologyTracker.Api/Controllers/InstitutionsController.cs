@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using NetworkTopologyTracker.Api.Data;
 using NetworkTopologyTracker.Api.Entities;
 using System;
-using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace NetworkTopologyTracker.Api.Controllers
@@ -19,6 +18,7 @@ namespace NetworkTopologyTracker.Api.Controllers
         public class InstitutionRequest
         {
             public string Name { get; set; } = string.Empty;
+            public string? Description { get; set; }
         }
 
         public InstitutionsController(AppDbContext context)
@@ -26,38 +26,58 @@ namespace NetworkTopologyTracker.Api.Controllers
             _context = context;
         }
 
-        // 1. LİSTELEME: Tüm binaları/kurumları getirir (Herkes görebilir)
+        // 1. LİSTELEME: Tüm kurumları ve altındaki tesisleri getirir
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var institutions = await _context.Institutions.ToListAsync();
+            var institutions = await _context.Institutions
+                .Include(i => i.Facilities)
+                .ToListAsync();
+
             return Ok(institutions);
         }
 
-        // 2. EKLEME: Sadece SuperAdmin yeni bir bina ekleyebilir
+        // 1.1 TEK BİR KURUMU GETİRME
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var institution = await _context.Institutions
+                .Include(i => i.Facilities)
+                .FirstOrDefaultAsync(i => i.Id == id);
+
+            if (institution == null)
+            {
+                return NotFound(new { message = "Kurum bulunamadı!" });
+            }
+
+            return Ok(institution);
+        }
+
+        // 2. EKLEME: Sadece SuperAdmin yeni bir kurum/bina ekleyebilir
         [HttpPost]
         [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> Create([FromBody] InstitutionRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.Name))
             {
-                return BadRequest(new { message = "Bina adı boş olamaz!" });
+                return BadRequest(new { message = "Kurum adı boş olamaz!" });
             }
 
             var institution = new Institution
             {
-                Name = request.Name
+                Name = request.Name,
+                Description = request.Description
             };
 
             await _context.Institutions.AddAsync(institution);
 
-            // 🪵 GERÇEK ZAMANLI LOG: Kimin ne eklediğini sisteme yazıyoruz
+            // 🪵 GERÇEK ZAMANLI LOG
             var username = User.Identity?.Name ?? "Bilinmeyen Kullanıcı";
             var log = new SystemLog
             {
                 Username = username,
-                Action = "Bina Eklendi",
-                Details = $"'{request.Name}' isimli yeni bir bina/kurum sisteme eklendi.",
+                Action = "Kurum Eklendi",
+                Details = $"'{request.Name}' isimli yeni kurum sisteme eklendi.",
                 ActionType = "Ekleme",
                 Timestamp = DateTime.UtcNow
             };
@@ -67,7 +87,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             return Ok(institution);
         }
 
-        // 3. DÜZENLEME: Sadece SuperAdmin binanın bilgilerini güncelleyebilir
+        // 3. DÜZENLEME: Sadece SuperAdmin kurum bilgilerini güncelleyebilir
         [HttpPut("{id}")]
         [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> Update(int id, [FromBody] InstitutionRequest request)
@@ -75,24 +95,25 @@ namespace NetworkTopologyTracker.Api.Controllers
             var institution = await _context.Institutions.FindAsync(id);
             if (institution == null)
             {
-                return NotFound(new { message = "Güncellenecek bina bulunamadı!" });
+                return NotFound(new { message = "Güncellenecek kurum bulunamadı!" });
             }
 
             if (string.IsNullOrWhiteSpace(request.Name))
             {
-                return BadRequest(new { message = "Bina adı boş olamaz!" });
+                return BadRequest(new { message = "Kurum adı boş olamaz!" });
             }
 
             var oldName = institution.Name;
             institution.Name = request.Name;
+            institution.Description = request.Description;
 
-            // 🪵 GERÇEK ZAMANLI LOG: Düzenleme geçmişini kaydet
+            // 🪵 GERÇEK ZAMANLI LOG
             var username = User.Identity?.Name ?? "Bilinmeyen Kullanıcı";
             var log = new SystemLog
             {
                 Username = username,
-                Action = "Bina Düzenlendi",
-                Details = $"Binanın ismi '{oldName}' değerinden '{request.Name}' değerine güncellendi.",
+                Action = "Kurum Düzenlendi",
+                Details = $"Kurum ismi '{oldName}' değerinden '{request.Name}' değerine güncellendi.",
                 ActionType = "Güncelleme",
                 Timestamp = DateTime.UtcNow
             };
@@ -102,7 +123,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             return Ok(institution);
         }
 
-        // 4. SİLME: Sadece SuperAdmin binayı ve ona bağlı alt hiyerarşiyi silebilir
+        // 4. SİLME: Sadece SuperAdmin kurumu ve bağlı tüm hiyerarşiyi silebilir
         [HttpDelete("{id}")]
         [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> Delete(int id)
@@ -110,18 +131,18 @@ namespace NetworkTopologyTracker.Api.Controllers
             var institution = await _context.Institutions.FindAsync(id);
             if (institution == null)
             {
-                return NotFound(new { message = "Silinecek bina bulunamadı!" });
+                return NotFound(new { message = "Silinecek kurum bulunamadı!" });
             }
 
             _context.Institutions.Remove(institution);
 
-            // 🪵 GERÇEK ZAMANLI LOG: Kim neyi sildi bilmeliyiz
+            // 🪵 GERÇEK ZAMANLI LOG
             var username = User.Identity?.Name ?? "Bilinmeyen Kullanıcı";
             var log = new SystemLog
             {
                 Username = username,
-                Action = "Bina Silindi",
-                Details = $"'{institution.Name}' isimli bina ve bağlı tüm alt katmanları sistemden silindi.",
+                Action = "Kurum Silindi",
+                Details = $"'{institution.Name}' isimli kurum ve bağlı tüm alt katmanları sistemden silindi.",
                 ActionType = "Silme",
                 Timestamp = DateTime.UtcNow
             };

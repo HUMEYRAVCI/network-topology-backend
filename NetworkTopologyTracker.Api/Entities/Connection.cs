@@ -1,9 +1,10 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace NetworkTopologyTracker.Api.Entities
 {
-    // Hiyerarşinin Bağlantı Katmanı: Cihazlar arası kablo bağlantı haritası
+    // Hiyerarşinin Bağlantı Katmanı: Cihazlar veya Portlar arası kablo bağlantı haritası
     public class Connection
     {
         [Key]
@@ -15,18 +16,20 @@ namespace NetworkTopologyTracker.Api.Entities
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        // Kablonun Çıktığı Yer: Hangi cihazın, hangi portundan kablo çıkıyor?
+        // Kablonun Çıktığı Yer: Hangi kaynak porttan çıkıyor?
         [Required]
         public int SourcePortId { get; set; }
 
         [ForeignKey("SourcePortId")]
+        [JsonIgnore] // JSON döngülerini (circular reference) engeller
         public Port? SourcePort { get; set; }
 
-        // Kablonun Gittiği Yer: Kablo hangi hedef cihaza bağlanıyor?
+        // Kablonun Bittiği Yer (Port-to-Device ilişkisi için mevcut yapın)
         [Required]
         public int TargetDeviceId { get; set; }
 
         [ForeignKey("TargetDeviceId")]
+        [JsonIgnore] // JSON döngülerini engeller
         public Device? TargetDevice { get; set; }
     }
 }

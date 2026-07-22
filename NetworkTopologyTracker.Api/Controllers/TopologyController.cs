@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using NetworkTopologyTracker.Api.Data;
 using NetworkTopologyTracker.Api.Entities;
 using Microsoft.AspNetCore.Authorization;
+using System;
 using System.Threading.Tasks;
 using System.Linq;
 
@@ -10,6 +11,7 @@ namespace NetworkTopologyTracker.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize] // 👈 Gerçek güvenlik kilidimiz tek bir yerde ve tam burada durmalı!
     public class TopologyController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -17,6 +19,19 @@ namespace NetworkTopologyTracker.Api.Controllers
         public TopologyController(AppDbContext context)
         {
             _context = context;
+        }
+
+        // Cihaz Ekleme / Güncelleme İstek Modeli
+        public class DeviceRequest
+        {
+            public string Name { get; set; } = string.Empty;
+            public string DeviceType { get; set; } = string.Empty;
+            public string Status { get; set; } = "Active";
+            public string? Brand { get; set; }
+            public string? Model { get; set; }
+            public string? MacAddress { get; set; }
+            public string? SerialNumber { get; set; }
+            public int RoomId { get; set; }
         }
 
         // 1. UÇ: Tüm Tesisleri Listeler (Arayüzdeki Tesis Seçim Dropdown'ı için)
@@ -34,19 +49,23 @@ namespace NetworkTopologyTracker.Api.Controllers
         [HttpGet("facilities/{facilityId}/topology")]
         public async Task<IActionResult> GetTopology(int facilityId)
         {
-            // Odaları, bağlı oldukları Kat (Floor) bilgisi, odadaki cihazlar ve cihazların portlarıyla çekiyoruz.
-            // Eski 'FacilityId' odada olmadığı için kat üzerinden binaya gidiyoruz: Floor.FacilityId
             var rooms = await _context.Rooms
                 .Include(r => r.Floor)
-                .Where(r => r.Floor!.FacilityId == facilityId)
+                .Where(r => r.Floor != null && r.Floor.FacilityId == facilityId)
                 .Include(r => r.Devices)
                     .ThenInclude(d => d.Ports)
                 .ToListAsync();
 
-            // Tüm ağın bağlantı haritasını (kablo çizgilerini) yeni kat ilişkisine göre çekiyoruz
             var connections = await _context.Connections
                 .Include(c => c.SourcePort)
-                .Where(c => c.SourcePort!.Device!.Room!.Floor!.FacilityId == facilityId)
+                    .ThenInclude(p => p!.Device)
+                        .ThenInclude(d => d!.Room)
+                            .ThenInclude(r => r!.Floor)
+                .Where(c => c.SourcePort != null && 
+                            c.SourcePort.Device != null && 
+                            c.SourcePort.Device.Room != null && 
+                            c.SourcePort.Device.Room.Floor != null && 
+                            c.SourcePort.Device.Room.Floor.FacilityId == facilityId)
                 .Select(c => new
                 {
                     c.Id,
@@ -64,7 +83,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                     r.Id,
                     r.Name,
                     FloorId = r.FloorId,
-                    FloorName = r.Floor != null ? r.Floor.Name : "Bilinmeyen Kat", // Eski FloorInfo yerine kat ismi gidiyor
+                    FloorName = r.Floor != null ? r.Floor.Name : "Bilinmeyen Kat",
                     Devices = r.Devices.Select(d => new
                     {
                         d.Id,
@@ -81,22 +100,25 @@ namespace NetworkTopologyTracker.Api.Controllers
             return Ok(result);
         }
 
-        // 3. UÇ: Yan Paneli Besleyen Cihaz Detayı (GİZLİLİK VE YETKİ KONTROLLÜ - AYNEN KORUNDU)
+        // 3. UÇ: Yan Paneli Besleyen Cihaz Detayı (GÜVENLİ YETKİ KONTROLÜ)
         [HttpGet("devices/{id}")]
-        public async Task<IActionResult> GetDeviceDetails(int id, [FromQuery] bool isAdmin = false)
+        public async Task<IActionResult> GetDeviceDetails(int id)
         {
             var device = await _context.Devices
                 .Include(d => d.Ports)
                 .Include(d => d.Credential)
                 .FirstOrDefaultAsync(d => d.Id == id);
 
-            if (device == null) return NotFound("Cihaz bulunamadı.");
+            if (device == null) return NotFound(new { message = "Cihaz bulunamadı." });
+
+            // 🛑 GÜVENLİK DÜZELTMESİ: URL'den gelen isAdmin parametresi yerine token içindeki gerçek role bakıyoruz
+            bool isSuperAdmin = User.IsInRole("SuperAdmin");
 
             string ipAddress = "GİZLİ (Yetki Yok)";
             string username = "GİZLİ (Yetki Yok)";
             string password = "GİZLİ (Yetki Yok)";
 
-            if (isAdmin && device.Credential != null)
+            if (isSuperAdmin && device.Credential != null)
             {
                 ipAddress = device.Credential.IpAddress;
                 username = device.Credential.Username;
@@ -125,36 +147,125 @@ namespace NetworkTopologyTracker.Api.Controllers
             return Ok(response);
         }
 
-        // 4. UÇ: Yeni Cihaz Ekleme (POST - AYNEN KORUNDU)
+        // 4. UÇ: Yeni Cihaz Ekleme (POST)
         [HttpPost("devices")]
-        public async Task<IActionResult> CreateDevice([FromBody] Device newDevice)
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> CreateDevice([FromBody] DeviceRequest request)
         {
-            if (newDevice == null)
+            if (request == null)
             {
-                return BadRequest("Cihaz bilgileri boş olamaz.");
+                return BadRequest(new { message = "Cihaz bilgileri boş olamaz." });
             }
 
-            _context.Devices.Add(newDevice);
+            var room = await _context.Rooms.FindAsync(request.RoomId);
+            if (room == null)
+            {
+                return BadRequest(new { message = "Seçilen oda veritabanında bulunamadı." });
+            }
+
+            var newDevice = new Device
+            {
+                Name = request.Name,
+                DeviceType = request.DeviceType,
+                Status = request.Status,
+                Brand = request.Brand,
+                Model = request.Model,
+                MacAddress = request.MacAddress,
+                SerialNumber = request.SerialNumber,
+                RoomId = request.RoomId
+            };
+
+            await _context.Devices.AddAsync(newDevice);
+
+            // Log kaydı
+            var currentUsername = User.Identity?.Name ?? "Sistem";
+            var log = new SystemLog
+            {
+                Username = currentUsername,
+                Action = "Cihaz Eklendi",
+                Details = $"'{request.Name}' isimli yeni cihaz eklendi.",
+                ActionType = "Ekleme",
+                Timestamp = DateTime.UtcNow
+            };
+            await _context.SystemLogs.AddAsync(log);
+
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetDeviceDetails), new { id = newDevice.Id }, newDevice);
+            return Ok(newDevice);
         }
 
-        // 5. UÇ: Cihaz Silme (DELETE - AYNEN KORUNDU)
+        // 5. UÇ: Cihaz Silme (DELETE)
         [HttpDelete("devices/{id}")]
+        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> DeleteDevice(int id)
         {
             var device = await _context.Devices.FindAsync(id);
             
             if (device == null)
             {
-                return NotFound($"ID'si {id} olan cihaz bulunamadı.");
+                return NotFound(new { message = $"ID'si {id} olan cihaz bulunamadı." });
             }
 
             _context.Devices.Remove(device);
+
+            // Log kaydı
+            var currentUsername = User.Identity?.Name ?? "Sistem";
+            var log = new SystemLog
+            {
+                Username = currentUsername,
+                Action = "Cihaz Silindi",
+                Details = $"'{device.Name}' (ID: {id}) cihazı sistemden silindi.",
+                ActionType = "Silme",
+                Timestamp = DateTime.UtcNow
+            };
+            await _context.SystemLogs.AddAsync(log);
+
             await _context.SaveChangesAsync();
 
-            return NoContent();
+            return Ok(new { message = $"'{device.Name}' başarıyla silindi." });
+        }
+
+        // 6. UÇ: Cihaz Bilgilerini Güncelleme (PUT)
+        [HttpPut("devices/{id}")]
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> UpdateDevice(int id, [FromBody] DeviceRequest request)
+        {
+            if (request == null)
+            {
+                return BadRequest(new { message = "Güncelleme bilgileri boş olamaz." });
+            }
+
+            var existingDevice = await _context.Devices.FirstOrDefaultAsync(d => d.Id == id);
+            if (existingDevice == null)
+            {
+                return NotFound(new { message = $"Güncellenmek istenen {id} ID'li cihaz bulunamadı." });
+            }
+
+            var currentUsername = User.Identity?.Name ?? "Sistem";
+
+            existingDevice.Name = request.Name;
+            existingDevice.DeviceType = request.DeviceType;
+            existingDevice.Status = request.Status;
+            existingDevice.Brand = request.Brand;
+            existingDevice.Model = request.Model;
+            existingDevice.MacAddress = request.MacAddress;
+            existingDevice.SerialNumber = request.SerialNumber;
+            existingDevice.RoomId = request.RoomId;
+
+            // Log kaydı
+            var log = new SystemLog
+            {
+                Username = currentUsername,
+                Action = "Cihaz Güncellendi",
+                Details = $"{id} ID'li cihazın bilgileri güncellendi.",
+                ActionType = "Güncelleme",
+                Timestamp = DateTime.UtcNow
+            };
+            await _context.SystemLogs.AddAsync(log);
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Cihaz başarıyla güncellendi!", device = existingDevice });
         }
     }
 }

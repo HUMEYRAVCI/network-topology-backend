@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace NetworkTopologyTracker.Api.Entities
 {
@@ -20,8 +21,9 @@ namespace NetworkTopologyTracker.Api.Entities
         // Üst Kademeye Bağlantı: Bu oda hangi kata ait?
         [Required]
         public int FloorId { get; set; }
-        
+
         [ForeignKey("FloorId")]
+        [JsonIgnore] // 🛑 Room -> Floor -> Rooms sonsuz JSON döngüsünü engeller
         public Floor? Floor { get; set; }
 
         // Alt Kademeye Bağlantı: Bu odanın içinde hangi cihazlar var?

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace NetworkTopologyTracker.Api.Entities
 {
@@ -30,6 +31,7 @@ namespace NetworkTopologyTracker.Api.Entities
         public int InstitutionId { get; set; }
 
         [ForeignKey("InstitutionId")]
+        [JsonIgnore] // 🛑 Facility -> Institution -> Facilities sonsuz JSON döngüsünü engeller
         public Institution? Institution { get; set; }
 
         // Alt Kademeye Bağlantı: Bir tesisin içinde birden fazla Kat bulunabilir.

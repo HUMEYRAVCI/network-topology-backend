@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace NetworkTopologyTracker.Api.Entities
 {
@@ -19,13 +20,14 @@ namespace NetworkTopologyTracker.Api.Entities
 
         [Required]
         [MaxLength(250)]
-        public string Password { get; set; } = string.Empty; // Güvenlik için ileride hash'lenebilir veya şifreli tutulabilir.
+        public string Password { get; set; } = string.Empty;
 
         // 1-1 Eşleşme: Bu şifre seti hangi cihaza ait?
         [Required]
         public int DeviceId { get; set; }
 
         [ForeignKey("DeviceId")]
+        [JsonIgnore] // 🛑 JSON döngüsünü (Circular Reference) ve yetkisiz veri sızıntısını engeller
         public Device? Device { get; set; }
     }
 }

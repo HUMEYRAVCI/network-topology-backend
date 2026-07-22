@@ -3,7 +3,6 @@ using NetworkTopologyTracker.Api.Entities;
 using Microsoft.AspNetCore.Identity;
 using System;
 using System.Threading.Tasks;
-using System.Linq;
 
 namespace NetworkTopologyTracker.Api.Data
 {
@@ -11,13 +10,7 @@ namespace NetworkTopologyTracker.Api.Data
     {
         public static async Task Initialize(AppDbContext context)
         {
-            // Eğer veritabanında zaten kurum varsa tekrar ekleme yapma
-            if (await context.Institutions.AnyAsync())
-            {
-                return;
-            }
-            
-            // 0. ADIM: Test Kullanıcılarını Güvenli Şifreyle Ekleme (Geçmiş Kod AYNEN Korundu)
+            // 0. ADIM: Test Kullanıcılarını Güvenli Şifreyle Ekleme
             if (!await context.Users.AnyAsync())
             {
                 var hasher = new PasswordHasher<User>();
@@ -44,6 +37,12 @@ namespace NetworkTopologyTracker.Api.Data
                 await context.SaveChangesAsync();
             }
 
+            // Eğer veritabanında zaten kurum/tesis verisi varsa hiyerarşik seed verilerini tekrar ekleme
+            if (await context.Institutions.AnyAsync())
+            {
+                return;
+            }
+
             // 1. ADIM: Kurum Tanımlama (Yeni Hiyerarşi - En Tepe Katman)
             var talasBelediyesi = new Institution
             {
@@ -53,7 +52,7 @@ namespace NetworkTopologyTracker.Api.Data
             await context.Institutions.AddAsync(talasBelediyesi);
             await context.SaveChangesAsync();
 
-            // 2. ADIM: Gerçek Talas Belediyesi Mekanlarının Eklenmesi (Geliştirilmiş Sürüm)
+            // 2. ADIM: Gerçek Talas Belediyesi Mekanlarının Eklenmesi
             var merkezBina = new Facility { Name = "Talas Belediyesi Merkez Binası", FacilityType = "Merkez Bina", InstitutionId = talasBelediyesi.Id, Address = "Yenidoğan Mah., Pazar Cad. No:10, Talas, Kayseri" };
             var eskiBina = new Facility { Name = "Eski Belediye Binası", FacilityType = "Tarihi Tesis", InstitutionId = talasBelediyesi.Id, Address = "Tablakaya Mah., Cumhuriyet Meydanı, Talas, Kayseri" };
             var kulturMerkezi = new Facility { Name = "Talas Bld. Kültür Merkezi ve 7/24 Kütüphane", FacilityType = "Kütüphane", InstitutionId = talasBelediyesi.Id, Address = "Yenidoğan Mah., Şaban Yılmaz Cad. No:1, Talas, Kayseri" };
@@ -64,7 +63,7 @@ namespace NetworkTopologyTracker.Api.Data
             await context.Facilities.AddRangeAsync(merkezBina, eskiBina, kulturMerkezi, altintepeKutuphane, abdulhamidhanKutuphane, guldalKutuphane);
             await context.SaveChangesAsync();
 
-            // 3. ADIM: Katları Tanımlama (Yeni Hiyerarşi - Floors)
+            // 3. ADIM: Katları Tanımlama (Floors)
             var zeminKat = new Floor { Name = "Zemin Kat", Level = 0, FacilityId = merkezBina.Id };
             var kat1 = new Floor { Name = "1. Kat", Level = 1, FacilityId = merkezBina.Id };
             var kutuphaneZemin = new Floor { Name = "Zemin Kat", Level = 0, FacilityId = kulturMerkezi.Id };
@@ -72,16 +71,16 @@ namespace NetworkTopologyTracker.Api.Data
             await context.Floors.AddRangeAsync(zeminKat, kat1, kutuphaneZemin);
             await context.SaveChangesAsync();
 
-            // 4. ADIM: Odaları Tanımlama (Rooms - Yeni hiyerarşide FloorId'ye bağlanıyor, eski FloorInfo kaldırıldı)
+            // 4. ADIM: Odaları Tanımlama (Rooms)
             var room = new Room
             {
                 Name = "Zemin Kat - Ana Sistem Odası",
-                FloorId = zeminKat.Id // Artık doğrudan binaya değil, Zemin Kat'a bağlıyoruz!
+                FloorId = zeminKat.Id
             };
             await context.Rooms.AddAsync(room);
             await context.SaveChangesAsync();
 
-            // 5. ADIM: Örnek Cihazlar Ekleme (Geçmiş Kod AYNEN Korundu)
+            // 5. ADIM: Örnek Cihazlar Ekleme
             var router = new Device
             {
                 Name = "TALAS-CORE-ROUTER",
@@ -109,7 +108,7 @@ namespace NetworkTopologyTracker.Api.Data
             await context.Devices.AddRangeAsync(router, edgeSwitch);
             await context.SaveChangesAsync();
 
-            // 6. ADIM: Hassas Giriş Bilgilerini (Credential) Kilitli Odaya Ekleme (Geçmiş Kod AYNEN Korundu)
+            // 6. ADIM: Hassas Giriş Bilgilerini (Credential) Ekleme
             var routerCred = new Credential
             {
                 IpAddress = "192.168.1.1",
@@ -128,7 +127,7 @@ namespace NetworkTopologyTracker.Api.Data
 
             await context.Credentials.AddRangeAsync(routerCred, switchCred);
 
-            // 7. ADIM: Portları Oluşturma (Geçmiş Kod AYNEN Korundu)
+            // 7. ADIM: Portları Oluşturma
             var routerPort = new Port
             {
                 PortNumber = "GigabitEthernet0/0/1",
@@ -146,7 +145,7 @@ namespace NetworkTopologyTracker.Api.Data
             await context.Ports.AddRangeAsync(routerPort, switchPort);
             await context.SaveChangesAsync();
 
-            // 8. ADIM: Topoloji Çizgisi (Kablo Bağlantısı) Oluşturma (Geçmiş Kod AYNEN Korundu)
+            // 8. ADIM: Topoloji Çizgisi (Kablo Bağlantısı) Oluşturma
             var connection = new Connection
             {
                 ConnectionType = "Cat6",

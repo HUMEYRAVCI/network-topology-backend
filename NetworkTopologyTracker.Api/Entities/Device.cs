@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace NetworkTopologyTracker.Api.Entities
 {
@@ -40,13 +41,17 @@ namespace NetworkTopologyTracker.Api.Entities
         public int RoomId { get; set; }
 
         [ForeignKey("RoomId")]
+        [JsonIgnore] // 🛑 Cihaz -> Oda -> Cihazlar sonsuz JSON döngüsünü engeller
         public Room? Room { get; set; }
 
         // Alt Kademeye Bağlantı: Bu cihazın üzerindeki fiziksel portlar
         public ICollection<Port> Ports { get; set; } = new List<Port>();
 
         // 1-1 Gizlilik İlişkisi: Hassas giriş bilgileri (Sadece yetkili görebilir)
-        // Cihaz silindiğinde şifresi de veritabanından otomatik silinecek.
         public Credential? Credential { get; set; }
+
+        // Bu cihaza gelen kablo bağlantıları (Connection.cs ile ters yönlü ilişki)
+        [JsonIgnore]
+        public ICollection<Connection> IncomingConnections { get; set; } = new List<Connection>();
     }
 }

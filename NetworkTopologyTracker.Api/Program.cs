@@ -37,14 +37,20 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// 2. CORS Ayarları (Arkadaşının Vue.js arayüzünün backend ile engelsiz konuşabilmesi için)
+// 2. CORS Ayarları (Arkadaşının Vue.js arayüzünün backend ile engelsiz konuşabilmesi için TEK ve TEMİZ tanım)
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowVueApp", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins(
+                    "http://localhost:5173", 
+                    "http://localhost:5174", 
+                    "http://localhost:8080", 
+                    "http://127.0.0.1:5173"
+              )
+              .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowCredentials();
     });
 });
 
@@ -81,6 +87,7 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -93,11 +100,10 @@ using (var scope = app.Services.CreateScope())
         var context = services.GetRequiredService<AppDbContext>();
         
         // Docker'daki SQL Server ayağa kalkarken C# hemen bağlanmaya çalışırsa çökebilir.
-        // Bu komut veritabanı hazır olana kadar bekler ve otomatik olarak oluşturur.
         await context.Database.EnsureCreatedAsync();
         
         // Sahte test verilerini veritabanına pompalıyoruz
-        await SeedData.Initialize(context); // ServiceProvider göndererek şifreleme ve DB servislerini uyumlu hale getirdik
+        await SeedData.Initialize(context);
     }
     catch (Exception ex)
     {
@@ -106,11 +112,11 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-app.UseCors("AllowAll");
+// 🎯 KRİTİK SIRALAMA: Önce CORS izni verilir, sonra kimlik doğrulanır ve yetkilendirilir!
+app.UseCors("AllowVueApp"); // 1. Kapı Vue.js isteklerine açılır
 
-// 🔑 JWT Korumasını Devreye Alıyoruz (Sıralama Çok Önemli: Önce Kimlik Doğrulama, Sonra Yetkilendirme)
-app.UseAuthentication(); 
-app.UseAuthorization();
+app.UseAuthentication();    // 2. Kimlik doğrulaması yapılır
+app.UseAuthorization();     // 3. Yetkisi var mı bakılır
 
 app.MapControllers();
 

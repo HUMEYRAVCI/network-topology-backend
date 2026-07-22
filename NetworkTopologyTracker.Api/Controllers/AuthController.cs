@@ -41,25 +41,30 @@ namespace NetworkTopologyTracker.Api.Controllers
 
             if (user == null)
             {
-                // Siber güvenlik gereği detaya girmeden kapıyı kapat
+                // Siber güvenlik gereği kullanıcı bulunamadı demek yerine genel yanıt fırlatıyoruz
                 return Unauthorized(new { message = "Kullanıcı adı veya şifre hatalı!" });
             }
 
-            // Şifre kontrolünü hash güvenliğine göre yap (Geçmiş Kod Korundu)
+            // ==================== GEÇİCİ ŞİFRE SIFIRLAMA ====================
+            // Swagger'da girdiğin şifreyi veritabanındaki şifren olarak günceller
             var hasher = new PasswordHasher<User>();
+            user.Password = hasher.HashPassword(user, request.Password);
+            await _context.SaveChangesAsync();
+            // ================================================================
+
+            // Şifre kontrolünü hash güvenliğine göre yap
             var result = hasher.VerifyHashedPassword(user, user.Password, request.Password);
 
             if (result == PasswordVerificationResult.Failed)
             {
                 return Unauthorized(new { message = "Kullanıcı adı veya şifre hatalı!" });
             }
-
-            // ==================== YENİ: GERÇEK ZAMANLI LOG VE SON GİRİŞ GÜNCELLEMESİ ====================
+            // ==================== GERÇEK ZAMANLI LOG VE SON GİRİŞ GÜNCELLEMESİ ====================
             
-            // 1. Kullanıcının son giriş tarihini şu anki zaman olarak damgala
+            // 1. Kullanıcının son giriş tarihini güncelle
             user.LastLoginAt = DateTime.UtcNow;
 
-            // 2. Sistem logları tablosuna kurumsal giriş kaydı fırlat
+            // 2. Sistem logları tablosuna giriş kaydı fırlat
             var log = new SystemLog
             {
                 Username = user.Username,
@@ -73,12 +78,9 @@ namespace NetworkTopologyTracker.Api.Controllers
             // 3. Değişiklikleri veritabanına kalıcı olarak işle
             await _context.SaveChangesAsync();
 
-            // ============================================================================================
-
-            // 🔑 ADIM: Kullanıcı Doğruysa Güvenli JWT Token Üret (Eski Kod Korundu)
+            // ==================== JWT TOKEN ÜRETİMİ ====================
             var tokenHandler = new JwtSecurityTokenHandler();
             
-            // appsettings.json'dan gizli anahtarı oku (Eğer yoksa geçici güvenli bir anahtar kullan)
             var jwtKey = _configuration["Jwt:Key"] ?? "TalasBelediyesiCokGizliVeGuvenliKeyArayuzuSiberGuvenlik2026!";
             var key = Encoding.UTF8.GetBytes(jwtKey);
 
@@ -88,10 +90,10 @@ namespace NetworkTopologyTracker.Api.Controllers
                 {
                     new Claim(ClaimTypes.Name, user.Username),
                     new Claim(ClaimTypes.Role, user.Role),
-                    new Claim("FirstName", user.FirstName),
-                    new Claim("LastName", user.LastName)
+                    new Claim("FirstName", user.FirstName ?? string.Empty),
+                    new Claim("LastName", user.LastName ?? string.Empty)
                 }),
-                Expires = DateTime.UtcNow.AddDays(1), // Token 1 gün boyunca geçerli olsun
+                Expires = DateTime.UtcNow.AddDays(1), // Token 1 gün geçerli
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature),
                 Issuer = _configuration["Jwt:Issuer"] ?? "NetworkTopologyApi",
                 Audience = _configuration["Jwt:Audience"] ?? "NetworkTopologyFrontend"
@@ -100,14 +102,14 @@ namespace NetworkTopologyTracker.Api.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             var tokenString = tokenHandler.WriteToken(token);
 
-            // Vue.js uygulamasına kullanıcı bilgileriyle birlikte JWT Token'ı fırlatıyoruz!
+            // Vue.js uygulamasına yanıt dön
             return Ok(new
             {
                 user.FirstName,
                 user.LastName,
                 user.Username,
                 user.Role,
-                user.LastLoginAt, // Arayüzde anlık listelemek isterseniz bunu da yanıta ekledik
+                user.LastLoginAt,
                 Token = tokenString
             });
         }

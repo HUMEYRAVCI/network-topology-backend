@@ -2,13 +2,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NetworkTopologyTracker.Api.Data;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NetworkTopologyTracker.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize] // Sisteme giriş yapmamış (token'ı olmayan) kimse bu verilere erişemez!
+    [Authorize] // Sisteme giriş yapmamış kimse bu uçlara erişemez
     public class UsersAndLogsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -18,11 +19,12 @@ namespace NetworkTopologyTracker.Api.Controllers
             _context = context;
         }
 
-        // 1. KULLANICI LİSTELEME: Arkadaşının kullanıcı tablosunu (Ad, Soyad, Rol, Son Giriş) doldurur
+        // 1. KULLANICI LİSTELEME: Sadece SuperAdmin kullanıcı listesini görebilir
         [HttpGet("users")]
+        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> GetUsers()
         {
-            // Şifreleri güvenlik sebebiyle arayüze göndermiyoruz, sadece gerekli alanları seçiyoruz
+            // Şifreleri güvenlik sebebiyle arayüze göndermiyoruz
             var users = await _context.Users
                 .Select(u => new
                 {
@@ -38,12 +40,14 @@ namespace NetworkTopologyTracker.Api.Controllers
             return Ok(users);
         }
 
-        // 2. LOG LİSTELEME: Gerçek zamanlı sistem loglarını en yeni tarihten en eskiye doğru listeler
+        // 2. LOG LİSTELEME: Sadece SuperAdmin sistem loglarını görebilir
         [HttpGet("logs")]
-        public async Task<IActionResult> GetLogs()
+        [Authorize(Roles = "SuperAdmin")]
+        public async Task<IActionResult> GetLogs([FromQuery] int limit = 100)
         {
             var logs = await _context.SystemLogs
-                .OrderByDescending(l => l.Timestamp) // En son yapılan işlem en üstte gözüksün
+                .OrderByDescending(l => l.Timestamp) // En son yapılan işlem en üstte
+                .Take(limit) // Performans için varsayılan son 100 log getirilir
                 .ToListAsync();
 
             return Ok(logs);
