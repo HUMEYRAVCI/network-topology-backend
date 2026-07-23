@@ -11,7 +11,7 @@ namespace NetworkTopologyTracker.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize] // 👈 Gerçek güvenlik kilidimiz tek bir yerde ve tam burada durmalı!
+    [Authorize]
     public class TopologyController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -34,22 +34,24 @@ namespace NetworkTopologyTracker.Api.Controllers
             public int RoomId { get; set; }
         }
 
-        // 1. UÇ: Tüm Tesisleri Listeler (Arayüzdeki Tesis Seçim Dropdown'ı için)
+        // 1. UÇ: Tüm Tesisleri Listeler
         [HttpGet("facilities")]
         public async Task<IActionResult> GetFacilities()
         {
             var facilities = await _context.Facilities
+                .AsNoTracking()
                 .Select(f => new { f.Id, f.Name, f.Address, f.InstitutionId })
                 .ToListAsync();
 
             return Ok(facilities);
         }
 
-        // 2. UÇ: Seçilen Tesisteki Odaları, Katları ve Cihazları Getirir (YENİ HİYERARŞİYE UYUMLU)
+        // 2. UÇ: Seçilen Tesisteki Odaları, Katları ve Cihazları Getirir
         [HttpGet("facilities/{facilityId}/topology")]
         public async Task<IActionResult> GetTopology(int facilityId)
         {
             var rooms = await _context.Rooms
+                .AsNoTracking()
                 .Include(r => r.Floor)
                 .Where(r => r.Floor != null && r.Floor.FacilityId == facilityId)
                 .Include(r => r.Devices)
@@ -57,6 +59,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                 .ToListAsync();
 
             var connections = await _context.Connections
+                .AsNoTracking()
                 .Include(c => c.SourcePort)
                     .ThenInclude(p => p!.Device)
                         .ThenInclude(d => d!.Room)
@@ -100,18 +103,18 @@ namespace NetworkTopologyTracker.Api.Controllers
             return Ok(result);
         }
 
-        // 3. UÇ: Yan Paneli Besleyen Cihaz Detayı (GÜVENLİ YETKİ KONTROLÜ)
+        // 3. UÇ: Cihaz Detayı
         [HttpGet("devices/{id}")]
         public async Task<IActionResult> GetDeviceDetails(int id)
         {
             var device = await _context.Devices
+                .AsNoTracking()
                 .Include(d => d.Ports)
                 .Include(d => d.Credential)
                 .FirstOrDefaultAsync(d => d.Id == id);
 
             if (device == null) return NotFound(new { message = "Cihaz bulunamadı." });
 
-            // 🛑 GÜVENLİK DÜZELTMESİ: URL'den gelen isAdmin parametresi yerine token içindeki gerçek role bakıyoruz
             bool isSuperAdmin = User.IsInRole("SuperAdmin");
 
             string ipAddress = "GİZLİ (Yetki Yok)";
@@ -177,7 +180,6 @@ namespace NetworkTopologyTracker.Api.Controllers
 
             await _context.Devices.AddAsync(newDevice);
 
-            // Log kaydı
             var currentUsername = User.Identity?.Name ?? "Sistem";
             var log = new SystemLog
             {
@@ -208,7 +210,6 @@ namespace NetworkTopologyTracker.Api.Controllers
 
             _context.Devices.Remove(device);
 
-            // Log kaydı
             var currentUsername = User.Identity?.Name ?? "Sistem";
             var log = new SystemLog
             {
@@ -252,7 +253,6 @@ namespace NetworkTopologyTracker.Api.Controllers
             existingDevice.SerialNumber = request.SerialNumber;
             existingDevice.RoomId = request.RoomId;
 
-            // Log kaydı
             var log = new SystemLog
             {
                 Username = currentUsername,
@@ -266,6 +266,34 @@ namespace NetworkTopologyTracker.Api.Controllers
             await _context.SaveChangesAsync();
 
             return Ok(new { message = "Cihaz başarıyla güncellendi!", device = existingDevice });
+        }
+
+        // 7. UÇ: Cihaz Arama (GET)
+        [HttpGet("devices/search")]
+        public async Task<IActionResult> SearchDevices([FromQuery] string query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                return Ok(await _context.Devices.AsNoTracking().ToListAsync());
+
+            var results = await _context.Devices
+                .AsNoTracking()
+                .Where(d => d.Name.Contains(query) || (d.MacAddress != null && d.MacAddress.Contains(query)))
+                .ToListAsync();
+
+            return Ok(results);
+        }
+
+        // 8. UÇ: Son 50 Sistem Logunu Getirir (GET)
+        [HttpGet("logs")]
+        public async Task<IActionResult> GetSystemLogs()
+        {
+            var logs = await _context.SystemLogs
+                .AsNoTracking()
+                .OrderByDescending(l => l.Timestamp)
+                .Take(50)
+                .ToListAsync();
+
+            return Ok(logs);
         }
     }
 }

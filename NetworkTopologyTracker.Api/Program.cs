@@ -87,6 +87,7 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+app.UseMiddleware<NetworkTopologyTracker.Api.Middlewares.ExceptionMiddleware>();
 
 app.UseSwagger();
 app.UseSwaggerUI();
