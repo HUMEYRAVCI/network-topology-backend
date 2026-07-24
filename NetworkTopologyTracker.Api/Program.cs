@@ -3,6 +3,8 @@ using NetworkTopologyTracker.Api.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,7 +13,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString));
 
-// 🔑 ADIM: JWT Kimlik Doğrulama (Authentication) Servislerini Sisteme Tanıtıyoruz
+// 🔑 JWT Kimlik Doğrulama Servisleri
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "TalasBelediyesiCokGizliVeGuvenliKeyArayuzuSiberGuvenlik2026!";
 var key = Encoding.UTF8.GetBytes(jwtKey);
 
@@ -22,7 +24,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false; // Geliştirme ortamında (localhost) HTTPS zorunluluğunu kaldırıyoruz
+    options.RequireHttpsMetadata = false;
     options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -32,27 +34,46 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "NetworkTopologyApi",
         ValidateAudience = true,
         ValidAudience = builder.Configuration["Jwt:Audience"] ?? "NetworkTopologyFrontend",
-        ValidateLifetime = true, // Token süresi (1 gün) bittiğinde geçersiz sayılması için
+        ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
 });
 
-// 2. CORS Ayarları (Arkadaşının Vue.js arayüzünün backend ile engelsiz konuşabilmesi için TEK ve TEMİZ tanım)
+// 1. ADIM: Dinamik CORS (Localhost + Yerel Ağ IP'leri)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVueApp", policy =>
     {
-        policy.WithOrigins(
-                    "http://localhost:5173", 
-                    "http://localhost:5174", 
-                    "http://localhost:8080", 
-                    "http://127.0.0.1:5173"
-              )
+        policy.SetIsOriginAllowed(origin => 
+                new Uri(origin).Host == "localhost" || 
+                new Uri(origin).Host == "127.0.0.1" || 
+                new Uri(origin).Host.StartsWith("192.168.") ||
+                new Uri(origin).Host.StartsWith("10.") ||      
+                new Uri(origin).Host.StartsWith("172."))
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
     });
 });
+
+// 2. ADIM: Rate Limiting Servisi (Aşırı İstek / DoS Koruması)
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    
+    options.AddPolicy("fixed", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1)
+            }));
+});
+
+// 🩺 3. ADIM: Health Check Servisi (Veritabanı Canlılık Kontrolü)
+builder.Services.AddHealthChecks();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -60,7 +81,6 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new() { Title = "NetworkTopologyTracker.Api", Version = "v1" });
     
-    // Swagger'a JWT Bearer (Token) desteğini tanımlıyoruz
     c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Description = "Lütfen kutuya 'Bearer <senin_tokenin>' şeklinde token girin. Örnek: Bearer eyJhbGciOi...",
@@ -92,18 +112,14 @@ app.UseMiddleware<NetworkTopologyTracker.Api.Middlewares.ExceptionMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// Veritabanını Otomatik Oluşturma ve Sahte Verileri (Seed Data) Basma Motoru
+// Veritabanını Otomatik Oluşturma ve Seed Data
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     try
     {
         var context = services.GetRequiredService<AppDbContext>();
-        
-        // Docker'daki SQL Server ayağa kalkarken C# hemen bağlanmaya çalışırsa çökebilir.
         await context.Database.EnsureCreatedAsync();
-        
-        // Sahte test verilerini veritabanına pompalıyoruz
         await SeedData.Initialize(context);
     }
     catch (Exception ex)
@@ -113,11 +129,14 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// 🎯 KRİTİK SIRALAMA: Önce CORS izni verilir, sonra kimlik doğrulanır ve yetkilendirilir!
-app.UseCors("AllowVueApp"); // 1. Kapı Vue.js isteklerine açılır
+// Middleware Sıralaması
+app.UseCors("AllowVueApp"); 
+app.UseRateLimiter();       
+app.UseAuthentication();    
+app.UseAuthorization();     
 
-app.UseAuthentication();    // 2. Kimlik doğrulaması yapılır
-app.UseAuthorization();     // 3. Yetkisi var mı bakılır
+// 🩺 3. ADIM: Health Check Uç Noktası Haritalama
+app.MapHealthChecks("/health"); 
 
 app.MapControllers();
 
