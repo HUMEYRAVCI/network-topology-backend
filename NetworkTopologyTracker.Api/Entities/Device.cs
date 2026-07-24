@@ -1,3 +1,6 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
@@ -22,11 +25,8 @@ namespace NetworkTopologyTracker.Api.Entities
         [MaxLength(50)]
         public string Status { get; set; } = "Active"; // Active, Inactive, Maintenance
 
-        [MaxLength(100)]
-        public string? Brand { get; set; } // Marka (Örn: Cisco)
-
-        [MaxLength(100)]
-        public string? Model { get; set; } // Model (Örn: Catalyst 2960)
+        [MaxLength(150)]
+        public string? Model { get; set; } // Marka ve Model Tek Alanda (Örn: Cisco Catalyst 2960)
 
         [MaxLength(100)]
         public string? MacAddress { get; set; }

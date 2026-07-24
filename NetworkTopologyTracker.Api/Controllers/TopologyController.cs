@@ -21,14 +21,13 @@ namespace NetworkTopologyTracker.Api.Controllers
             _context = context;
         }
 
-        // Cihaz Ekleme / Güncelleme İstek Modeli
+        // Cihaz Ekleme / Güncelleme İstek Modeli (Brand tamamen kaldırıldı)
         public class DeviceRequest
         {
             public string Name { get; set; } = string.Empty;
             public string DeviceType { get; set; } = string.Empty;
             public string Status { get; set; } = "Active";
-            public string? Brand { get; set; }
-            public string? Model { get; set; }
+            public string? Model { get; set; } // Örn: "Cisco Catalyst 2960"
             public string? MacAddress { get; set; }
             public string? SerialNumber { get; set; }
             public int RoomId { get; set; }
@@ -93,7 +92,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                         d.Name,
                         d.DeviceType,
                         d.Status,
-                        Model = $"{d.Brand} {d.Model}".Trim() // Burada da birleştirildi
+                        d.Model // Doğrudan tek model alanı döner
                     })
                 }),
                 Connections = connections
@@ -133,7 +132,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                 device.Name,
                 device.DeviceType,
                 device.Status,
-                Model = $"{device.Brand} {device.Model}".Trim(), // Marka + Model
+                device.Model, // Doğrudan tek model alanı
                 device.MacAddress,
                 device.SerialNumber,
                 SecurityInfo = new
@@ -169,7 +168,6 @@ namespace NetworkTopologyTracker.Api.Controllers
                 Name = request.Name,
                 DeviceType = request.DeviceType,
                 Status = request.Status,
-                Brand = request.Brand,
                 Model = request.Model,
                 MacAddress = request.MacAddress,
                 SerialNumber = request.SerialNumber,
@@ -245,7 +243,6 @@ namespace NetworkTopologyTracker.Api.Controllers
             existingDevice.Name = request.Name;
             existingDevice.DeviceType = request.DeviceType;
             existingDevice.Status = request.Status;
-            existingDevice.Brand = request.Brand;
             existingDevice.Model = request.Model;
             existingDevice.MacAddress = request.MacAddress;
             existingDevice.SerialNumber = request.SerialNumber;
