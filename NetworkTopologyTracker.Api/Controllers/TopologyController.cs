@@ -40,7 +40,7 @@ namespace NetworkTopologyTracker.Api.Controllers
         {
             var facilities = await _context.Facilities
                 .AsNoTracking()
-                .Select(f => new { f.Id, f.Name, f.Address, f.InstitutionId })
+                .Select(f => new { f.Id, f.Name, f.Address })
                 .ToListAsync();
 
             return Ok(facilities);
@@ -93,8 +93,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                         d.Name,
                         d.DeviceType,
                         d.Status,
-                        d.Brand,
-                        d.Model
+                        Model = $"{d.Brand} {d.Model}".Trim() // Burada da birleştirildi
                     })
                 }),
                 Connections = connections
@@ -134,8 +133,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                 device.Name,
                 device.DeviceType,
                 device.Status,
-                device.Brand,
-                device.Model,
+                Model = $"{device.Brand} {device.Model}".Trim(), // Marka + Model
                 device.MacAddress,
                 device.SerialNumber,
                 SecurityInfo = new
@@ -270,7 +268,7 @@ namespace NetworkTopologyTracker.Api.Controllers
 
         // 7. UÇ: Cihaz Arama (GET)
         [HttpGet("devices/search")]
-        public async Task<IActionResult> SearchDevices([FromQuery] string query)
+        public async Task<IActionResult> SearchDevices([FromQuery] string? query)
         {
             if (string.IsNullOrWhiteSpace(query))
                 return Ok(await _context.Devices.AsNoTracking().ToListAsync());

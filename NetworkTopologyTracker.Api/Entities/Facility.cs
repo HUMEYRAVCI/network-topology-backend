@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace NetworkTopologyTracker.Api.Entities
 {
-    // Hiyerarşinin 2. Basamağı: Tesis / Bina (Örn: Talas Belediyesi Merkez Kütüphanesi)
+    // Hiyerarşinin 1. Basamağı: Tesis / Bina (Örn: Talas Belediyesi Merkez Kütüphanesi)
     public class Facility
     {
         [Key]
@@ -25,14 +25,6 @@ namespace NetworkTopologyTracker.Api.Entities
         public string? Address { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-        // Üst Kademeye Bağlantı: Bu bina hangi kuruma ait?
-        [Required]
-        public int InstitutionId { get; set; }
-
-        [ForeignKey("InstitutionId")]
-        [JsonIgnore] // 🛑 Facility -> Institution -> Facilities sonsuz JSON döngüsünü engeller
-        public Institution? Institution { get; set; }
 
         // Alt Kademeye Bağlantı: Bir tesisin içinde birden fazla Kat bulunabilir.
         public ICollection<Floor> Floors { get; set; } = new List<Floor>();

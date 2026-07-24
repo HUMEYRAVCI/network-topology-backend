@@ -160,17 +160,12 @@ namespace NetworkTopologyTracker.Api.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<int>("InstitutionId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("InstitutionId");
 
                     b.ToTable("Facilities");
                 });
@@ -191,33 +186,14 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("FacilityId");
 
                     b.ToTable("Floors");
-                });
-
-            modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Institution", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Institutions");
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Port", b =>
@@ -284,22 +260,25 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
 
                     b.Property<string>("ActionType")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Details")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Username")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 
@@ -316,26 +295,31 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.Property<string>("FirstName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("LastName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Password")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
 
                     b.Property<string>("Role")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Username")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.HasKey("Id");
 
@@ -351,9 +335,9 @@ namespace NetworkTopologyTracker.Api.Migrations
                         .IsRequired();
 
                     b.HasOne("NetworkTopologyTracker.Api.Entities.Device", "TargetDevice")
-                        .WithMany()
+                        .WithMany("IncomingConnections")
                         .HasForeignKey("TargetDeviceId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("SourcePort");
@@ -381,17 +365,6 @@ namespace NetworkTopologyTracker.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Room");
-                });
-
-            modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Facility", b =>
-                {
-                    b.HasOne("NetworkTopologyTracker.Api.Entities.Institution", "Institution")
-                        .WithMany("Facilities")
-                        .HasForeignKey("InstitutionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Institution");
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Floor", b =>
@@ -431,6 +404,8 @@ namespace NetworkTopologyTracker.Api.Migrations
                 {
                     b.Navigation("Credential");
 
+                    b.Navigation("IncomingConnections");
+
                     b.Navigation("Ports");
                 });
 
@@ -442,11 +417,6 @@ namespace NetworkTopologyTracker.Api.Migrations
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Floor", b =>
                 {
                     b.Navigation("Rooms");
-                });
-
-            modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Institution", b =>
-                {
-                    b.Navigation("Facilities");
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Port", b =>

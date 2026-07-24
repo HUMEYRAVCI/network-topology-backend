@@ -37,33 +37,24 @@ namespace NetworkTopologyTracker.Api.Data
                 await context.SaveChangesAsync();
             }
 
-            // Eğer veritabanında zaten kurum/tesis verisi varsa hiyerarşik seed verilerini tekrar ekleme
-            if (await context.Institutions.AnyAsync())
+            // Eğer veritabanında zaten tesis/bina verisi varsa hiyerarşik seed verilerini tekrar ekleme
+            if (await context.Facilities.AnyAsync())
             {
                 return;
             }
 
-            // 1. ADIM: Kurum Tanımlama (Yeni Hiyerarşi - En Tepe Katman)
-            var talasBelediyesi = new Institution
-            {
-                Name = "Talas Belediyesi (Merkez)",
-                Description = "Kayseri Talas Belediyesi Ağ Topolojisi Yönetim Merkezi"
-            };
-            await context.Institutions.AddAsync(talasBelediyesi);
-            await context.SaveChangesAsync();
-
-            // 2. ADIM: Gerçek Talas Belediyesi Mekanlarının Eklenmesi
-            var merkezBina = new Facility { Name = "Talas Belediyesi Merkez Binası", FacilityType = "Merkez Bina", InstitutionId = talasBelediyesi.Id, Address = "Yenidoğan Mah., Pazar Cad. No:10, Talas, Kayseri" };
-            var eskiBina = new Facility { Name = "Eski Belediye Binası", FacilityType = "Tarihi Tesis", InstitutionId = talasBelediyesi.Id, Address = "Tablakaya Mah., Cumhuriyet Meydanı, Talas, Kayseri" };
-            var kulturMerkezi = new Facility { Name = "Talas Bld. Kültür Merkezi ve 7/24 Kütüphane", FacilityType = "Kütüphane", InstitutionId = talasBelediyesi.Id, Address = "Yenidoğan Mah., Şaban Yılmaz Cad. No:1, Talas, Kayseri" };
-            var altintepeKutuphane = new Facility { Name = "Altıntepe Semt Kütüphanesi", FacilityType = "Kütüphane", InstitutionId = talasBelediyesi.Id, Address = "Kiçiköy Mah., Altıntepe, Talas, Kayseri" };
-            var abdulhamidhanKutuphane = new Facility { Name = "Abdülhamidhan Semt Kütüphanesi", FacilityType = "Kütüphane", InstitutionId = talasBelediyesi.Id, Address = "Mevlana Mah., Talas, Kayseri" };
-            var guldalKutuphane = new Facility { Name = "Hafize-Ahmet Güldal Semt Kütüphanesi", FacilityType = "Kütüphane", InstitutionId = talasBelediyesi.Id, Address = "Bahçelievler Mah., Talas, Kayseri" };
+            // 1. ADIM: Gerçek Talas Belediyesi Mekanlarının (Binalarının) Eklenmesi
+            var merkezBina = new Facility { Name = "Talas Belediyesi Merkez Binası", FacilityType = "Merkez Bina", Address = "Yenidoğan Mah., Pazar Cad. No:10, Talas, Kayseri" };
+            var eskiBina = new Facility { Name = "Eski Belediye Binası", FacilityType = "Tarihi Tesis", Address = "Tablakaya Mah., Cumhuriyet Meydanı, Talas, Kayseri" };
+            var kulturMerkezi = new Facility { Name = "Talas Bld. Kültür Merkezi ve 7/24 Kütüphane", FacilityType = "Kütüphane", Address = "Yenidoğan Mah., Şaban Yılmaz Cad. No:1, Talas, Kayseri" };
+            var altintepeKutuphane = new Facility { Name = "Altıntepe Semt Kütüphanesi", FacilityType = "Kütüphane", Address = "Kiçiköy Mah., Altıntepe, Talas, Kayseri" };
+            var abdulhamidhanKutuphane = new Facility { Name = "Abdülhamidhan Semt Kütüphanesi", FacilityType = "Kütüphane", Address = "Mevlana Mah., Talas, Kayseri" };
+            var guldalKutuphane = new Facility { Name = "Hafize-Ahmet Güldal Semt Kütüphanesi", FacilityType = "Kütüphane", Address = "Bahçelievler Mah., Talas, Kayseri" };
 
             await context.Facilities.AddRangeAsync(merkezBina, eskiBina, kulturMerkezi, altintepeKutuphane, abdulhamidhanKutuphane, guldalKutuphane);
             await context.SaveChangesAsync();
 
-            // 3. ADIM: Katları Tanımlama (Floors)
+            // 2. ADIM: Katları Tanımlama (Floors)
             var zeminKat = new Floor { Name = "Zemin Kat", Level = 0, FacilityId = merkezBina.Id };
             var kat1 = new Floor { Name = "1. Kat", Level = 1, FacilityId = merkezBina.Id };
             var kutuphaneZemin = new Floor { Name = "Zemin Kat", Level = 0, FacilityId = kulturMerkezi.Id };
@@ -71,7 +62,7 @@ namespace NetworkTopologyTracker.Api.Data
             await context.Floors.AddRangeAsync(zeminKat, kat1, kutuphaneZemin);
             await context.SaveChangesAsync();
 
-            // 4. ADIM: Odaları Tanımlama (Rooms)
+            // 3. ADIM: Odaları Tanımlama (Rooms)
             var room = new Room
             {
                 Name = "Zemin Kat - Ana Sistem Odası",
@@ -80,7 +71,7 @@ namespace NetworkTopologyTracker.Api.Data
             await context.Rooms.AddAsync(room);
             await context.SaveChangesAsync();
 
-            // 5. ADIM: Örnek Cihazlar Ekleme
+            // 4. ADIM: Örnek Cihazlar Ekleme
             var router = new Device
             {
                 Name = "TALAS-CORE-ROUTER",
@@ -108,7 +99,7 @@ namespace NetworkTopologyTracker.Api.Data
             await context.Devices.AddRangeAsync(router, edgeSwitch);
             await context.SaveChangesAsync();
 
-            // 6. ADIM: Hassas Giriş Bilgilerini (Credential) Ekleme
+            // 5. ADIM: Hassas Giriş Bilgilerini (Credential) Ekleme
             var routerCred = new Credential
             {
                 IpAddress = "192.168.1.1",
@@ -127,7 +118,7 @@ namespace NetworkTopologyTracker.Api.Data
 
             await context.Credentials.AddRangeAsync(routerCred, switchCred);
 
-            // 7. ADIM: Portları Oluşturma
+            // 6. ADIM: Portları Oluşturma
             var routerPort = new Port
             {
                 PortNumber = "GigabitEthernet0/0/1",
@@ -145,7 +136,7 @@ namespace NetworkTopologyTracker.Api.Data
             await context.Ports.AddRangeAsync(routerPort, switchPort);
             await context.SaveChangesAsync();
 
-            // 8. ADIM: Topoloji Çizgisi (Kablo Bağlantısı) Oluşturma
+            // 7. ADIM: Topoloji Çizgisi (Kablo Bağlantısı) Oluşturma
             var connection = new Connection
             {
                 ConnectionType = "Cat6",
