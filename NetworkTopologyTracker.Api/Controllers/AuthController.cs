@@ -45,20 +45,15 @@ namespace NetworkTopologyTracker.Api.Controllers
                 return Unauthorized(new { message = "Kullanıcı adı veya şifre hatalı!" });
             }
 
-            // ==================== GEÇİCİ ŞİFRE SIFIRLAMA ====================
-            // Swagger'da girdiğin şifreyi veritabanındaki şifren olarak günceller
+            // Şifre kontrolünü veritabanındaki mevcut hash üzerinden güvenli şekilde yap
             var hasher = new PasswordHasher<User>();
-            user.Password = hasher.HashPassword(user, request.Password);
-            await _context.SaveChangesAsync();
-            // ================================================================
-
-            // Şifre kontrolünü hash güvenliğine göre yap
             var result = hasher.VerifyHashedPassword(user, user.Password, request.Password);
 
             if (result == PasswordVerificationResult.Failed)
             {
                 return Unauthorized(new { message = "Kullanıcı adı veya şifre hatalı!" });
             }
+
             // ==================== GERÇEK ZAMANLI LOG VE SON GİRİŞ GÜNCELLEMESİ ====================
             
             // 1. Kullanıcının son giriş tarihini güncelle

@@ -51,7 +51,7 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.HasIndex("TargetDeviceId");
 
-                    b.ToTable("Connections");
+                    b.ToTable("Connections", (string)null);
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Credential", b =>
@@ -85,7 +85,7 @@ namespace NetworkTopologyTracker.Api.Migrations
                     b.HasIndex("DeviceId")
                         .IsUnique();
 
-                    b.ToTable("Credentials");
+                    b.ToTable("Credentials", (string)null);
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Device", b =>
@@ -133,7 +133,7 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.HasIndex("RoomId");
 
-                    b.ToTable("Devices");
+                    b.ToTable("Devices", (string)null);
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Facility", b =>
@@ -163,7 +163,7 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Facilities");
+                    b.ToTable("Facilities", (string)null);
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Floor", b =>
@@ -189,7 +189,7 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.HasIndex("FacilityId");
 
-                    b.ToTable("Floors");
+                    b.ToTable("Floors", (string)null);
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Port", b =>
@@ -217,7 +217,7 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.HasIndex("DeviceId");
 
-                    b.ToTable("Ports");
+                    b.ToTable("Ports", (string)null);
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Room", b =>
@@ -243,7 +243,7 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.HasIndex("FloorId");
 
-                    b.ToTable("Rooms");
+                    b.ToTable("Rooms", (string)null);
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.SystemLog", b =>
@@ -278,7 +278,7 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("SystemLogs");
+                    b.ToTable("SystemLogs", (string)null);
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.User", b =>
@@ -319,7 +319,7 @@ namespace NetworkTopologyTracker.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("NetworkTopologyTracker.Api.Entities.Connection", b =>

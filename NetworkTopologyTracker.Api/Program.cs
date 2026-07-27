@@ -119,8 +119,7 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<AppDbContext>();
-        await context.Database.EnsureCreatedAsync();
-        await SeedData.Initialize(context);
+        await DbInitializer.InitializeAsync(context);
     }
     catch (Exception ex)
     {
