@@ -15,6 +15,24 @@ Bu proje; kurum, bina, kat, oda, ağ cihazı (Switch, Router, AP) ve port seviye
 * **Architecture:** Layered Architecture & Global Exception Middleware
 
 ---
+# 🌐 Network Topology Tracker (Backend API)
+
+Ağ cihazlarını, port yapılandırmalarını, bağlantı haritalarını ve sistem loglarını merkezi olarak yönetmeyi sağlayan RESTful API mimarisi.
+
+## 🚀 Öne Çıkan Özellikler
+
+- **Katmanlı Ağ Mimarisi:** Bina (Facility), Kat (Floor), Oda (Room) ve Cihaz (Device) hiyerarşisi.
+- **Dinamik Topoloji İzleme:** Cihazlar ve portlar arası bağlantıların (Fiber, Cat6, Wireless) takibi.
+- **Güvenlik & Yetkilendirme:** Cihaz erişim bilgileri (Credential) ve sistem logları için yetki bazlı veri izolasyonu.
+- **ORM & Veri Bütünlüğü:** Entity Framework Core ile ilişkisel veritabanı tasarımı, döngüsel bağımlılık (Circular Reference) koruması.
+- **Konteyner Desteği:** Dockerfile ile hızlı dağıtım imkanı.
+
+## 🛠️ Kullanılan Teknolojiler
+
+- **Platform:** .NET 8 / C#
+- **ORM:** Entity Framework Core
+- **Veritabanı:** PostgreSQL / MS SQL
+- **Konteynerizasyon:** Docker
 
 ## 🏗️ Mimari Yapı ve Veri Modeli
 
