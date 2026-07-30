@@ -25,7 +25,6 @@ namespace NetworkTopologyTracker.Api.Controllers
             _configuration = configuration;
         }
 
-        // Giriş İstek Modeli (Vue.js'ten gelecek veri kalıbı)
         public class LoginRequest
         {
             public string Username { get; set; } = string.Empty;
@@ -35,47 +34,39 @@ namespace NetworkTopologyTracker.Api.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
-            // Kullanıcıyı veritabanında ara
             var user = await _context.Users
                 .FirstOrDefaultAsync(u => u.Username == request.Username);
 
             if (user == null)
             {
-                // Siber güvenlik gereği kullanıcı bulunamadı demek yerine genel yanıt fırlatıyoruz
                 return Unauthorized(new { message = "Kullanıcı adı veya şifre hatalı!" });
             }
 
-            // Şifre kontrolünü veritabanındaki mevcut hash üzerinden güvenli şekilde yap
             var hasher = new PasswordHasher<User>();
-            var result = hasher.VerifyHashedPassword(user, user.Password, request.Password);
+            var verifyResult = hasher.VerifyHashedPassword(user, user.Password, request.Password);
 
-            if (result == PasswordVerificationResult.Failed)
+            if (verifyResult == PasswordVerificationResult.Failed)
             {
                 return Unauthorized(new { message = "Kullanıcı adı veya şifre hatalı!" });
             }
 
-            // ==================== GERÇEK ZAMANLI LOG VE SON GİRİŞ GÜNCELLEMESİ ====================
-            
-            // 1. Kullanıcının son giriş tarihini güncelle
-            user.LastLoginAt = DateTime.UtcNow;
+            // ==================== LOG VE SON GİRİŞ GÜNCELLEMESİ (TÜRKİYE SAATİ: UTC+3) ====================
+            var turkeyNow = DateTime.UtcNow.AddHours(3);
+            user.LastLoginAt = turkeyNow;
 
-            // 2. Sistem logları tablosuna giriş kaydı fırlat
             var log = new SystemLog
             {
                 Username = user.Username,
                 Action = "Kullanıcı Girişi",
                 Details = $"{user.FirstName} {user.LastName} ({user.Role}) sisteme başarıyla giriş yaptı.",
                 ActionType = "Giriş",
-                Timestamp = DateTime.UtcNow
+                Timestamp = turkeyNow
             };
             await _context.SystemLogs.AddAsync(log);
-
-            // 3. Değişiklikleri veritabanına kalıcı olarak işle
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(); // Veritabanına anında yazılır
 
             // ==================== JWT TOKEN ÜRETİMİ ====================
             var tokenHandler = new JwtSecurityTokenHandler();
-            
             var jwtKey = _configuration["Jwt:Key"] ?? "TalasBelediyesiCokGizliVeGuvenliKeyArayuzuSiberGuvenlik2026!";
             var key = Encoding.UTF8.GetBytes(jwtKey);
 
@@ -88,7 +79,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                     new Claim("FirstName", user.FirstName ?? string.Empty),
                     new Claim("LastName", user.LastName ?? string.Empty)
                 }),
-                Expires = DateTime.UtcNow.AddDays(1), // Token 1 gün geçerli
+                Expires = DateTime.UtcNow.AddDays(1),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature),
                 Issuer = _configuration["Jwt:Issuer"] ?? "NetworkTopologyApi",
                 Audience = _configuration["Jwt:Audience"] ?? "NetworkTopologyFrontend"
@@ -97,14 +88,13 @@ namespace NetworkTopologyTracker.Api.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             var tokenString = tokenHandler.WriteToken(token);
 
-            // Vue.js uygulamasına yanıt dön
             return Ok(new
             {
                 user.FirstName,
                 user.LastName,
                 user.Username,
                 user.Role,
-                user.LastLoginAt,
+                LastLoginAt = user.LastLoginAt.Value.ToString("yyyy-MM-dd HH:mm:ss"), // Türkiye saatli temiz format
                 Token = tokenString
             });
         }

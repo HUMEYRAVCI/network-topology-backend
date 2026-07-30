@@ -12,8 +12,8 @@ using NetworkTopologyTracker.Api.Data;
 namespace NetworkTopologyTracker.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260724145155_RemoveBrandColumn")]
-    partial class RemoveBrandColumn
+    [Migration("20260730065343_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -321,6 +321,9 @@ namespace NetworkTopologyTracker.Api.Migrations
                         .HasColumnType("nvarchar(50)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Username")
+                        .IsUnique();
 
                     b.ToTable("Users");
                 });

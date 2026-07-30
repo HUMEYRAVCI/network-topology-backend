@@ -24,8 +24,8 @@ namespace NetworkTopologyTracker.Api.Controllers
         [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> GetUsers()
         {
-            // Şifreleri güvenlik sebebiyle arayüze göndermiyoruz
             var users = await _context.Users
+                .AsNoTracking()
                 .Select(u => new
                 {
                     u.Id,
@@ -33,7 +33,10 @@ namespace NetworkTopologyTracker.Api.Controllers
                     u.LastName,
                     u.Username,
                     u.Role,
-                    u.LastLoginAt
+                    // Türkiye Saat Dilimine Göre Temiz ve Okunabilir Format
+                    LastLoginAt = u.LastLoginAt.HasValue 
+                        ? u.LastLoginAt.Value.ToString("yyyy-MM-dd HH:mm:ss") 
+                        : "Hiç Giriş Yapmadı"
                 })
                 .ToListAsync();
 
@@ -46,8 +49,18 @@ namespace NetworkTopologyTracker.Api.Controllers
         public async Task<IActionResult> GetLogs([FromQuery] int limit = 100)
         {
             var logs = await _context.SystemLogs
-                .OrderByDescending(l => l.Timestamp) // En son yapılan işlem en üstte
-                .Take(limit) // Performans için varsayılan son 100 log getirilir
+                .AsNoTracking()
+                .OrderByDescending(l => l.Timestamp)
+                .Take(limit)
+                .Select(l => new
+                {
+                    l.Id,
+                    l.Username,
+                    l.Action,
+                    l.Details,
+                    l.ActionType,
+                    Timestamp = l.Timestamp.ToString("yyyy-MM-dd HH:mm:ss") // Türkiye saatli temiz log zamanı
+                })
                 .ToListAsync();
 
             return Ok(logs);
