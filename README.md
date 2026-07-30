@@ -15,7 +15,6 @@ Bu proje; kurum, bina, kat, oda, ağ cihazı (Switch, Router, AP) ve port seviye
 * **Architecture:** Layered Architecture & Global Exception Middleware
 
 ---
-# 🌐 Network Topology Tracker (Backend API)
 
 Ağ cihazlarını, port yapılandırmalarını, bağlantı haritalarını ve sistem loglarını merkezi olarak yönetmeyi sağlayan RESTful API mimarisi.
 
