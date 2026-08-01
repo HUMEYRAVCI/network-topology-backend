@@ -7,6 +7,7 @@ using NetworkTopologyTracker.Api.Entities;
 
 namespace NetworkTopologyTracker.Api.Data
 {
+        //   DbInitializer.cs  -> Facility/Floor/Room/Device/Port/Connection/Credential
     public static class DbInitializer
     {
         // =====================================================================
