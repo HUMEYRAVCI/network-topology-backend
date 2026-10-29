@@ -1,6 +1,16 @@
+# =============================================================================
+# DOCKER COMPOSE ORKESTRASYON YAPILANDIRMASI
+# =============================================================================
+# Bu dosya, Ağ Topolojisi Takip Sistemi'nin ihtiyaç duyduğu iki ana mikro-bileşeni
+# (MS SQL Server 2022 veritabanı ve .NET 8 Web API) izole bir sanal ağ (topology-net)
+# üzerinde tek komutla (docker compose up -d --build) ayağa kaldırır.
 services:
+  # ---------------------------------------------------------------------------
+  # 1. VERİTABANI SERVİSİ (MS SQL SERVER 2022)
+  # ---------------------------------------------------------------------------
   network-db:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    # Apple Silicon (M1/M2/M3) Mac cihazlarda x86_64 uyumluluğu için platform belirtilir.
     platform: linux/amd64
     user: root
     container_name: network_topology_db
@@ -9,10 +19,12 @@ services:
     environment:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=YourStrong@Password123!
+    # Konteyner yeniden başlatıldığında verilerin silinmemesi için kalıcı disk alanı (Volume).
     volumes:
       - sql_data:/var/opt/mssql
     networks:
       - topology-net
+    # API konteynerinin veritabanı tamamen hazır olmadan başlamasını önleyen sağlık kontrolü (Healthcheck).
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
       interval: 10s
@@ -20,26 +32,34 @@ services:
       retries: 10
       start_period: 20s
 
+  # ---------------------------------------------------------------------------
+  # 2. BACKEND WEB API SERVİSİ (.NET 8)
+  # ---------------------------------------------------------------------------
   network-api:
     build:
       context: .
       dockerfile: ./NetworkTopologyTracker.Api/Dockerfile
     container_name: network_topology_api
+    # Host makinedeki 5278 portunu konteynerin içindeki 8080 portuna yönlendirir.
     ports:
       - "5278:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://0.0.0.0:8080
+      # Docker iç ağında "network-db" servis adını kullanarak SQL Server'a bağlanır.
       - ConnectionStrings__DefaultConnection=Server=network-db,1433;Database=NetworkTopologyDb;User Id=sa;Password=YourStrong@Password123!;TrustServerCertificate=True;
+    # Veritabanı healthcheck testini başarıyla geçene kadar API'nin başlatılmasını bekletir.
     depends_on:
       network-db:
         condition: service_healthy
     networks:
       - topology-net
 
+# Veritabanı dosyalarının saklandığı kalıcı Docker Volume tanımı
 volumes:
   sql_data:
 
+# Konteynerlerin birbirleriyle servis isimleri üzerinden haberleşmesini sağlayan köprü (Bridge) ağı
 networks:
   topology-net:
     driver: bridge

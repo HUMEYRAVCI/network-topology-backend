@@ -11,6 +11,18 @@ using System.Linq;
 
 namespace NetworkTopologyTracker.Api.Controllers
 {
+    /// <summary>
+    /// Ağ Topolojisi ve Envanter Yönetimi Ana Denetleyicisi (Core Topology Controller).
+    /// Kurumun hiyerarşik ağ mimarisini oluşturan Bina (<see cref="Facility"/>), Kat (<see cref="Floor"/>),
+    /// Oda (<see cref="Room"/>), Cihaz (<see cref="Device"/>), Port (<see cref="Port"/>) ve Bağlantı (<see cref="Connection"/>)
+    /// varlıkları üzerindeki tüm CRUD (Oluşturma, Okuma, Güncelleme, Silme) işlemlerini ve topoloji ağacı sorgularını yönetir.
+    /// 
+    /// GÜVENLİK VE YETKİLENDİRME MİMARİSİ:
+    /// - Sınıf seviyesindeki <see cref="AuthorizeAttribute"/> sayesinde tüm uç noktalar geçerli bir JWT Token gerektirir.
+    /// - Okuma (GET) uç noktaları hem "Viewer" hem de "SuperAdmin" rollerine açıktır; ancak cihazların hassas erişim
+    ///   bilgileri (<see cref="Credential"/>) <see cref="BuildSecurityInfo"/> metodu ile "Viewer" rolünden gizlenir.
+    /// - Veri değiştiren (POST, PUT, DELETE) tüm uç noktalar <c>[Authorize(Roles = "SuperAdmin")]</c> ile korunmaktadır.
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
@@ -18,21 +30,27 @@ namespace NetworkTopologyTracker.Api.Controllers
     {
         private readonly AppDbContext _context;
 
+        /// <summary>
+        /// Veritabanı bağlamını (<see cref="AppDbContext"/>) Dependency Injection ile alır.
+        /// </summary>
         public TopologyController(AppDbContext context)
         {
             _context = context;
         }
 
         // =========================================================================
-        // 1. BİNA (FACILITY) İŞLEMLERİ
+        // 1. BİNA / TESİS (FACILITY) İŞLEMLERİ
         // =========================================================================
 
         /// <summary>
-        /// Tüm binaların listesini getirir.
+        /// Sistemde kayıtlı tüm tesis/binaların özet listesini getirir.
+        /// Rota: GET /api/Topology/facilities
         /// </summary>
         [HttpGet("facilities")]
         public async Task<IActionResult> GetFacilities()
         {
+            // AsNoTracking() ile EF Core değişiklik izleme (Change Tracker) maliyeti devre dışı bırakılarak
+            // salt-okunur sorgu performansı artırılır; yalnızca arayüzün ihtiyaç duyduğu alanlar projekte edilir.
             var facilities = await _context.Facilities
                 .AsNoTracking()
                 .Select(f => new { f.Id, f.Name, f.FacilityType, f.Address })
@@ -42,15 +60,19 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Yeni bir bina tanımlar.
+        /// Sisteme yeni bir fiziksel bina / tesis tanımlar ve işlemi denetim loglarına kaydeder.
+        /// Rota: POST /api/Topology/facilities
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpPost("facilities")]
         [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> CreateFacility([FromBody] FacilityRequest request)
         {
+            // İstek gövdesi ve zorunlu bina adı doğrulaması.
             if (request == null || string.IsNullOrWhiteSpace(request.Name))
                 return BadRequest(new { message = "Bina adı boş olamaz." });
 
+            // Bina türü belirtilmemişse varsayılan olarak "Hizmet Binası" atanır; saat Türkiye saatine (UTC+3) ayarlanır.
             var facility = new Facility
             {
                 Name = request.Name,
@@ -61,6 +83,7 @@ namespace NetworkTopologyTracker.Api.Controllers
 
             await _context.Facilities.AddAsync(facility);
 
+            // İşlemi gerçekleştiren yöneticiyi JWT Token içerisindeki Name claim'inden okuyarak log kaydı oluştur.
             var currentUsername = User.Identity?.Name ?? "Sistem";
             await _context.SystemLogs.AddAsync(new SystemLog
             {
@@ -71,17 +94,24 @@ namespace NetworkTopologyTracker.Api.Controllers
                 Timestamp = DateTime.UtcNow.AddHours(3)
             });
 
+            // Hem yeni tesisi hem de denetim logunu tek bir veritabanı işlemi (Transaction) içinde kaydet.
             await _context.SaveChangesAsync();
 
             return Ok(facility);
         }
 
         /// <summary>
-        /// Seçilen tesisteki odaları, katları, cihazları ve bağlantı ağacını getirir.
+        /// Seçilen bir tesise (facilityId) ait tüm katları, odaları, cihazları, portları,
+        /// rol bazlı maskelenmiş güvenlik bilgilerini ve cihazlar arası kablo bağlantı haritasını (Topoloji Ağacı) getirir.
+        /// Rota: GET /api/Topology/facilities/{facilityId}/topology
         /// </summary>
+        /// <param name="facilityId">Topolojisi görüntülenecek binanın ID değeri.</param>
         [HttpGet("facilities/{facilityId}/topology")]
         public async Task<IActionResult> GetTopology(int facilityId)
         {
+            // 1. ADIM: Seçilen binadaki tüm odaları, bağlı oldukları kat bilgisiyle (Floor),
+            // içlerindeki cihazlarla (Devices), cihazların portlarıyla (Ports) ve erişim bilgileriyle (Credential)
+            // Eager Loading (Include / ThenInclude) kullanarak tek seferde çek.
             var rooms = await _context.Rooms
                 .AsNoTracking()
                 .Include(r => r.Floor)
@@ -92,6 +122,8 @@ namespace NetworkTopologyTracker.Api.Controllers
                     .ThenInclude(d => d.Credential)
                 .ToListAsync();
 
+            // 2. ADIM: Kaynak portu (SourcePort) bu binadaki bir cihaza ait olan tüm fiziksel/kablosuz
+            // bağlantıları (Connections) çekerek topoloji grafiğinin kenarlarını (Edges) oluştur.
             var connections = await _context.Connections
                 .AsNoTracking()
                 .Include(c => c.SourcePort)
@@ -113,6 +145,8 @@ namespace NetworkTopologyTracker.Api.Controllers
                 })
                 .ToListAsync();
 
+            // 3. ADIM: İstemcinin (Frontend topoloji haritası bileşeninin) doğrudan görselleştirebileceği
+            // hiyerarşik JSON yanıt modelini inşa et. Cihaz şifreleri BuildSecurityInfo() ile rol kontrolünden geçirilir.
             var result = new
             {
                 Rooms = rooms.Select(r => new
@@ -142,7 +176,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Var olan bir binanın bilgilerini günceller.
+        /// Var olan bir binanın ad, tür ve adres bilgilerini günceller.
+        /// Rota: PUT /api/Topology/facilities/{id}
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpPut("facilities/{id}")]
         [Authorize(Roles = "SuperAdmin")]
@@ -155,6 +191,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             if (facility == null)
                 return NotFound(new { message = $"ID'si {id} olan tesis bulunamadı." });
 
+            // Alanları güncelle (Yeni FacilityType boş gönderilmişse mevcut türü koru).
             facility.Name = request.Name;
             facility.FacilityType = string.IsNullOrWhiteSpace(request.FacilityType) ? facility.FacilityType : request.FacilityType;
             facility.Address = request.Address;
@@ -175,12 +212,18 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Binayı ve ona bağlı alt öğeleri siler (confirm=true parametresi gerektirir).
+        /// Bir binayı ve altındaki tüm hiyerarşik alt öğeleri (Katlar, Odalar, Cihazlar, Portlar, Kimlik Bilgileri, Bağlantılar)
+        /// güvenli iki aşamalı onay mekanizmasıyla (<c>?confirm=true</c>) siler.
+        /// Rota: DELETE /api/Topology/facilities/{id}?confirm=true
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
+        /// <param name="id">Silinecek binanın ID değeri.</param>
+        /// <param name="confirm">False ise silme yapılmaz, etkilenecek alt kayıtların özeti 409 Conflict ile döndürülür.</param>
         [HttpDelete("facilities/{id}")]
         [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> DeleteFacility(int id, [FromQuery] bool confirm = false)
         {
+            // Silinecek binanın altındaki tüm hiyerarşik ağacı (Kat -> Oda -> Cihaz -> Port / Credential) belleğe yükle.
             var facility = await _context.Facilities
                 .Include(f => f.Floors)
                     .ThenInclude(fl => fl.Rooms)
@@ -195,6 +238,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             if (facility == null)
                 return NotFound(new { message = $"ID'si {id} olan tesis bulunamadı." });
 
+            // Etki analizi (Impact Analysis) ve loglama için alt öğeleri düzleştirerek (Flatten) listele.
             var floors = facility.Floors.ToList();
             var rooms = floors.SelectMany(fl => fl.Rooms).ToList();
             var devices = rooms.SelectMany(r => r.Devices).ToList();
@@ -203,6 +247,8 @@ namespace NetworkTopologyTracker.Api.Controllers
             var credentials = devices.Where(d => d.Credential != null).Select(d => d.Credential!).ToList();
             var connections = await FindRelatedConnectionsAsync(deviceIds);
 
+            // 1. AŞAMA (ONAY KONTROLÜ): Yönetici henüz ?confirm=true göndermemişse veriyi silme;
+            // hangi alt kayıtlardan kaç adet silineceğini HTTP 409 (Conflict) ile bildirerek onay iste.
             if (!confirm)
             {
                 return Conflict(new
@@ -220,6 +266,9 @@ namespace NetworkTopologyTracker.Api.Controllers
                 });
             }
 
+            // 2. AŞAMA (KALICI SİLME):
+            // Connection tablosunda DeleteBehavior.Restrict tanımlı olduğu için yabancı anahtar hatası almamak adına
+            // önce cihazlara bağlı kablolar (Connections) silinir, ardından bina silinir (diğer alt tablolar Cascade ile silinir).
             _context.Connections.RemoveRange(connections);
             _context.Facilities.Remove(facility);
 
@@ -243,7 +292,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         // =========================================================================
 
         /// <summary>
-        /// Seçilen binaya yeni bir kat ekler.
+        /// Belirtilen binaya (FacilityId) yeni bir kat ekler.
+        /// Rota: POST /api/Topology/floors
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpPost("floors")]
         [Authorize(Roles = "SuperAdmin")]
@@ -252,6 +303,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.Name))
                 return BadRequest(new { message = "Kat adı boş olamaz." });
 
+            // Yabancı anahtar doğrulaması: Katın ekleneceği üst bina veritabanında mevcut mu?
             var facilityExists = await _context.Facilities.AnyAsync(f => f.Id == request.FacilityId);
             if (!facilityExists)
                 return NotFound(new { message = "Seçilen bina bulunamadı." });
@@ -281,7 +333,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Var olan katın bilgilerini günceller.
+        /// Var olan bir katın adını, seviyesini (Level) veya bağlı olduğu binayı günceller.
+        /// Rota: PUT /api/Topology/floors/{id}
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpPut("floors/{id}")]
         [Authorize(Roles = "SuperAdmin")]
@@ -294,6 +348,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             if (floor == null)
                 return NotFound(new { message = $"ID'si {id} olan kat bulunamadı." });
 
+            // Hedef binanın varlığını kontrol et.
             var facilityExists = await _context.Facilities.AnyAsync(f => f.Id == request.FacilityId);
             if (!facilityExists)
                 return NotFound(new { message = "Seçilen bina bulunamadı." });
@@ -318,12 +373,15 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Katı ve altındaki odaları/cihazları siler (confirm=true parametresi gerektirir).
+        /// Bir katı ve altındaki tüm odaları/cihazları iki aşamalı onay mekanizmasıyla (<c>?confirm=true</c>) siler.
+        /// Rota: DELETE /api/Topology/floors/{id}?confirm=true
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpDelete("floors/{id}")]
         [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> DeleteFloor(int id, [FromQuery] bool confirm = false)
         {
+            // Katın altındaki tüm oda, cihaz, port ve kimlik bilgilerini belleğe yükle.
             var floor = await _context.Floors
                 .Include(fl => fl.Rooms)
                     .ThenInclude(r => r.Devices)
@@ -336,6 +394,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             if (floor == null)
                 return NotFound(new { message = $"ID'si {id} olan kat bulunamadı." });
 
+            // Silinecek alt varlıkların sayılarını hesapla.
             var rooms = floor.Rooms.ToList();
             var devices = rooms.SelectMany(r => r.Devices).ToList();
             var deviceIds = devices.Select(d => d.Id).ToList();
@@ -343,6 +402,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             var credentials = devices.Where(d => d.Credential != null).Select(d => d.Credential!).ToList();
             var connections = await FindRelatedConnectionsAsync(deviceIds);
 
+            // Onay verilmemişse silinecek envanter özetini 409 Conflict ile döndür.
             if (!confirm)
             {
                 return Conflict(new
@@ -359,6 +419,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                 });
             }
 
+            // Önce Restrict kısıtlamasına sahip bağlantıları, ardından katı sil.
             _context.Connections.RemoveRange(connections);
             _context.Floors.Remove(floor);
 
@@ -378,11 +439,13 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         // =========================================================================
-        // 3. ODA (ROOM) İŞLEMLERİ
+        // 3. ODA / BİRİM (ROOM) İŞLEMLERİ
         // =========================================================================
 
         /// <summary>
-        /// Seçilen kata yeni bir oda ekler.
+        /// Seçilen kata (FloorId) yeni bir oda veya birim ekler.
+        /// Rota: POST /api/Topology/rooms
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpPost("rooms")]
         [Authorize(Roles = "SuperAdmin")]
@@ -391,6 +454,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.Name))
                 return BadRequest(new { message = "Oda adı boş olamaz." });
 
+            // Odanın ekleneceği katın varlığını doğrula.
             var floorExists = await _context.Floors.AnyAsync(f => f.Id == request.FloorId);
             if (!floorExists)
                 return NotFound(new { message = "Seçilen kat bulunamadı." });
@@ -420,7 +484,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Var olan bir odanın bilgilerini günceller.
+        /// Var olan bir odanın adını veya bulunduğu katı günceller.
+        /// Rota: PUT /api/Topology/rooms/{id}
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpPut("rooms/{id}")]
         [Authorize(Roles = "SuperAdmin")]
@@ -456,7 +522,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Odayı ve içindeki tüm cihazları siler (confirm=true parametresi gerektirir).
+        /// Bir odayı ve içindeki tüm cihazları iki aşamalı onay mekanizmasıyla (<c>?confirm=true</c>) siler.
+        /// Rota: DELETE /api/Topology/rooms/{id}?confirm=true
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpDelete("rooms/{id}")]
         [Authorize(Roles = "SuperAdmin")]
@@ -478,6 +546,7 @@ namespace NetworkTopologyTracker.Api.Controllers
             var credentials = devices.Where(d => d.Credential != null).Select(d => d.Credential!).ToList();
             var connections = await FindRelatedConnectionsAsync(deviceIds);
 
+            // Onay parametresi false ise silinecek bağlı kayıt sayılarını döndür.
             if (!confirm)
             {
                 return Conflict(new
@@ -493,6 +562,7 @@ namespace NetworkTopologyTracker.Api.Controllers
                 });
             }
 
+            // Önce cihazların dahil olduğu bağlantıları, ardından odayı sil.
             _context.Connections.RemoveRange(connections);
             _context.Rooms.Remove(room);
 
@@ -512,21 +582,25 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         // =========================================================================
-        // 4. CİHAZ (DEVICE) İŞLEMLERİ
+        // 4. AĞ VE UÇ CİHAZ (DEVICE) İŞLEMLERİ
         // =========================================================================
 
         /// <summary>
-        /// Cihaz adında veya MAC adresinde arama yapar.
+        /// Tüm tesislerdeki cihazlar arasında cihaz adına (Hostname) veya MAC adresine göre arama yapar.
+        /// Arama metni (query) boş bırakılırsa tüm cihazları listeler.
+        /// Rota: GET /api/Topology/devices/search?query=...
         /// </summary>
         [HttpGet("devices/search")]
         public async Task<IActionResult> SearchDevices([FromQuery] string? query)
         {
+            // Sorgu ağacını (IQueryable) hazırla; portları ve erişim bilgilerini dahil et.
             var devicesQuery = _context.Devices
                 .AsNoTracking()
                 .Include(d => d.Ports)
                 .Include(d => d.Credential)
                 .AsQueryable();
 
+            // Arama parametresi doluysa Name veya MacAddress alanlarında kısmi eşleşme (LIKE %query%) uygula.
             if (!string.IsNullOrWhiteSpace(query))
             {
                 devicesQuery = devicesQuery.Where(d =>
@@ -536,6 +610,7 @@ namespace NetworkTopologyTracker.Api.Controllers
 
             var devices = await devicesQuery.ToListAsync();
 
+            // Sonuçları rol bazlı güvenlik maskelemesi (BuildSecurityInfo) uygulayarak döndür.
             var results = devices.Select(d => new
             {
                 d.Id,
@@ -554,7 +629,8 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Cihaz detaylarını ve portlarını getirir.
+        /// Belirli bir cihazın (id) tüm donanım özelliklerini, port listesini ve yetkiye bağlı erişim bilgilerini getirir.
+        /// Rota: GET /api/Topology/devices/{id}
         /// </summary>
         [HttpGet("devices/{id}")]
         public async Task<IActionResult> GetDeviceDetails(int id)
@@ -584,7 +660,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Yeni bir cihaz tanımlar.
+        /// Seçilen bir odaya (RoomId) yeni bir ağ cihazı ekler.
+        /// Rota: POST /api/Topology/devices
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpPost("devices")]
         [Authorize(Roles = "SuperAdmin")]
@@ -595,12 +673,14 @@ namespace NetworkTopologyTracker.Api.Controllers
                 return BadRequest(new { message = "Cihaz bilgileri boş olamaz." });
             }
 
+            // Cihazın konumlandırılacağı odanın veritabanında mevcut olup olmadığını kontrol et.
             var room = await _context.Rooms.FindAsync(request.RoomId);
             if (room == null)
             {
                 return BadRequest(new { message = "Seçilen oda veritabanında bulunamadı." });
             }
 
+            // DTO'dan gelen NetworkDeviceType enum değerini ToDisplayString() ile standart metin karşılığına çevir.
             var newDevice = new Device
             {
                 Name = request.Name,
@@ -631,7 +711,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Var olan bir cihazın tüm detaylarını günceller.
+        /// Var olan bir cihazın donanım, durum ve oda konum bilgilerini günceller.
+        /// Rota: PUT /api/Topology/devices/{id}
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpPut("devices/{id}")]
         [Authorize(Roles = "SuperAdmin")]
@@ -650,6 +732,7 @@ namespace NetworkTopologyTracker.Api.Controllers
 
             var currentUsername = User.Identity?.Name ?? "Sistem";
 
+            // Mevcut cihazın özelliklerini istek modelindeki yeni değerlerle güncelle.
             existingDevice.Name = request.Name;
             existingDevice.DeviceType = request.DeviceType!.Value.ToDisplayString();
             existingDevice.Status = request.Status;
@@ -674,7 +757,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         /// <summary>
-        /// Cihazı sistemden kaldırır.
+        /// Belirtilen cihazı sistemden kalıcı olarak siler ve denetim logu oluşturur.
+        /// Rota: DELETE /api/Topology/devices/{id}
+        /// Yetki: Yalnızca "SuperAdmin"
         /// </summary>
         [HttpDelete("devices/{id}")]
         [Authorize(Roles = "SuperAdmin")]
@@ -710,7 +795,8 @@ namespace NetworkTopologyTracker.Api.Controllers
         // =========================================================================
 
         /// <summary>
-        /// Son 50 Sistem Logunu Getirir.
+        /// Sistemde gerçekleşen son 50 denetim logunu en güncelden en eskiye doğru getirir.
+        /// Rota: GET /api/Topology/logs
         /// </summary>
         [HttpGet("logs")]
         public async Task<IActionResult> GetSystemLogs()
@@ -725,9 +811,15 @@ namespace NetworkTopologyTracker.Api.Controllers
         }
 
         // =========================================================================
-        // HELPER METHOD(S)
+        // YARDIMCI METOTLAR (HELPER METHODS)
         // =========================================================================
 
+        /// <summary>
+        /// Rol Tabanlı Veri Maskeleme Yardımcı Metodu:
+        /// İsteği yapan kullanıcının JWT Token'ındaki rolü "SuperAdmin" ise cihazın gerçek IP, kullanıcı adı
+        /// ve şifre bilgilerini döndürür. Aksi halde ("Viewer" rolü veya Credential kaydı yoksa)
+        /// siber güvenlik gereği bu alanları "GİZLİ (Yetki Yok)" metniyle maskeler.
+        /// </summary>
         private object BuildSecurityInfo(Credential? credential)
         {
             bool isSuperAdmin = User.IsInRole("SuperAdmin");
@@ -750,6 +842,12 @@ namespace NetworkTopologyTracker.Api.Controllers
             };
         }
 
+        /// <summary>
+        /// Silinecek cihaz listesine (deviceIds) bağlı olan tüm gelen (TargetDeviceId) ve giden (SourcePortId)
+        /// ağ bağlantılarını (<see cref="Connection"/>) tespit eder.
+        /// MS SQL Server'da Connection ilişkileri DeleteBehavior.Restrict olarak tanımlandığı için,
+        /// üst varlıklar (Bina/Kat/Oda) silinmeden önce bu bağlantılar bulunup temizlenmelidir.
+        /// </summary>
         private async Task<List<Connection>> FindRelatedConnectionsAsync(List<int> deviceIds)
         {
             if (deviceIds.Count == 0) return new List<Connection>();
@@ -763,36 +861,53 @@ namespace NetworkTopologyTracker.Api.Controllers
     }
 
     // =========================================================================
-    // DTO / İSTEK MODELLERİ (REQUEST MODELS)
+    // DTO / İSTEK MODELLERİ (DATA TRANSFER OBJECTS / REQUEST MODELS)
     // =========================================================================
 
+    /// <summary>
+    /// Yeni cihaz ekleme (POST) ve mevcut cihazı güncelleme (PUT) isteklerinde kullanılan,
+    /// DataAnnotations doğrulama (Validation) kurallarına sahip DTO sınıfı.
+    /// </summary>
     public class DeviceRequest
     {
+        /// <summary>Cihazın topolojide görünecek adı (Zorunlu, maks. 100 karakter).</summary>
         [Required(ErrorMessage = "Cihaz adı zorunludur.")]
         [MaxLength(100)]
         public string Name { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Cihazın türü (Zorunlu). Nullable enum olarak tanımlanmıştır; böylece istemci bu alanı
+        /// göndermezse varsayılan ilk enum değerine (0 = Router) düşmek yerine [Required] doğrulamasına takılır.
+        /// </summary>
         [Required(ErrorMessage = "Cihaz türü seçilmesi zorunludur.")]
         public NetworkDeviceType? DeviceType { get; set; }
 
+        /// <summary>Cihazın çalışma durumu (Örn: "Active", "Inactive", "Maintenance").</summary>
         [Required(ErrorMessage = "Durum bilgisi zorunludur.")]
         [MaxLength(50)]
         public string Status { get; set; } = "Active";
 
+        /// <summary>Cihazın marka ve model bilgisi (İsteğe bağlı).</summary>
         [MaxLength(150)]
         public string? Model { get; set; }
 
+        /// <summary>Cihazın fiziksel MAC adresi (İsteğe bağlı).</summary>
         [MaxLength(100)]
         public string? MacAddress { get; set; }
 
+        /// <summary>Cihazın üretici seri numarası (İsteğe bağlı).</summary>
         [MaxLength(100)]
         public string? SerialNumber { get; set; }
 
+        /// <summary>Cihazın ekleneceği odanın veritabanı ID değeri (1 veya daha büyük olmalıdır).</summary>
         [Required(ErrorMessage = "Cihazın bağlı olduğu oda (RoomId) zorunludur.")]
         [Range(1, int.MaxValue, ErrorMessage = "Geçerli bir RoomId belirtilmelidir.")]
         public int RoomId { get; set; }
     }
 
+    /// <summary>
+    /// Bina oluşturma ve güncelleme istekleri için kullanılan DTO sınıfı.
+    /// </summary>
     public class FacilityRequest
     {
         public string Name { get; set; } = string.Empty;
@@ -800,6 +915,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         public string? Address { get; set; }
     }
 
+    /// <summary>
+    /// Kat oluşturma ve güncelleme istekleri için kullanılan DTO sınıfı.
+    /// </summary>
     public class FloorRequest
     {
         public string Name { get; set; } = string.Empty;
@@ -807,6 +925,9 @@ namespace NetworkTopologyTracker.Api.Controllers
         public int FacilityId { get; set; }
     }
 
+    /// <summary>
+    /// Oda oluşturma ve güncelleme istekleri için kullanılan DTO sınıfı.
+    /// </summary>
     public class RoomRequest
     {
         public string Name { get; set; } = string.Empty;

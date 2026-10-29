@@ -25,5 +25,7 @@ obj/
 # Docker info
 .dockerignore
 
-# VS Code settings
+# VS Code & Visual Studio / macOS settings
 .vscode/
+.vs/
+.DS_Store
